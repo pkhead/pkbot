@@ -1,4 +1,4 @@
-import { Guild, GuildMember } from "discord.js";
+import { ChatInputCommandInteraction, Guild, GuildMember } from "discord.js";
 import { VoiceConnection, joinVoiceChannel, DiscordGatewayAdapterCreator, createAudioPlayer, createAudioResource } from "@discordjs/voice";
 import stream from "stream";
 import ytdl from "ytdl-core";
@@ -42,54 +42,55 @@ export class MusicQueueYoutubeEntry implements MusicQueueEntry {
         }
     }
 }
-class GuildData {
-    public voice: VoiceConnection | null
-    public queue: MusicQueueEntry[]
 
-    constructor() {
-        this.voice = null;
-        this.queue = [];
-    }
+class GuildData {
+    public voice: VoiceConnection | null = null;
+    public queue: MusicQueueEntry[] = [];
+    public isPlaying: boolean = false;
 }
 
 const guildDataMap: Map<string, GuildData> = new Map();
 const getGuildData = (id: string) => guildDataMap.get(id) || guildDataMap.set(id, new GuildData()).get(id);
 
-export class VoiceError extends Error {};
+export class MusicError extends Error {};
 
 export function getQueue(guildId: string): MusicQueueEntry[] | undefined {
     return getGuildData(guildId)?.queue;
 }
 
-export async function addToQueue(guildId: string, item: MusicQueueEntry): Promise<string> {
+export async function addToQueue(guildId: string, item: MusicQueueEntry): Promise<MusicData> {
     let guildData = getGuildData(guildId);
     if (!guildData) {
-        return "ERROR!"
+        throw new MusicError("ERROR!");
     }
 
     guildData.queue.push(item);
 
     const songInfo = await item.getData();
-    return `Added to queue "${songInfo.title}" by ${songInfo.author}`;
+    return songInfo
 }
 
-export async function addURLToQueue(guildId: string, urlStr: string): Promise<string> {
+export async function addURLToQueue(guildId: string, urlStr: string): Promise<MusicData> {
     let url;
 
     try {
         url = new URL(urlStr);
     } catch (e) {
-        return "That's not a valid URL.";
+        throw new MusicError("I need a valid URL!");
     }
 
     if (url.hostname === "www.youtube.com" || url.hostname === "youtube.com" || url.hostname === "youtu.be") {
         return await addToQueue(guildId, new MusicQueueYoutubeEntry(urlStr));
     } else {
-        return "I don't know what that website that is."
+        throw new MusicError("I don't know what that website that is.");
     }
 }
 
-export async function voiceStart(member: GuildMember, guild: Guild): Promise<string> {
+export function isPlayingMusic(guildId: string): boolean {
+    return getGuildData(guildId)?.isPlaying === true;
+}
+
+export async function voiceStart(interaction: ChatInputCommandInteraction, member: GuildMember, guild: Guild): Promise<void> {
     let guildData = getGuildData(guild.id);
     if (!guildData) {
         throw new ReferenceError();
@@ -101,15 +102,20 @@ export async function voiceStart(member: GuildMember, guild: Guild): Promise<str
         let queue = guildData.queue;
 
         if (queue && queue.length > 0) {
+            // don't leave voice channel if re-entering the same one
             if (guildData?.voice?.joinConfig.channelId !== voiceData.channelId) {
                 guildData?.voice?.destroy();
-            }
 
-            guildData.voice = joinVoiceChannel({
-                channelId: voiceData.channelId,
-                guildId: guild.id,
-                adapterCreator: guild.voiceAdapterCreator as DiscordGatewayAdapterCreator
-            });
+            }
+            
+            // join channel if not already in one
+            if (!guildData.voice) {
+                guildData.voice = joinVoiceChannel({
+                    channelId: voiceData.channelId,
+                    guildId: guild.id,
+                    adapterCreator: guild.voiceAdapterCreator as DiscordGatewayAdapterCreator
+                });
+            }
 
             const player = createAudioPlayer();
 
@@ -119,23 +125,36 @@ export async function voiceStart(member: GuildMember, guild: Guild): Promise<str
             
             guildData.voice.subscribe(player);
             
-            let cur = queue.shift();
+            (function play() {
+                guildData.isPlaying = true;
+                let cur = queue.shift();
 
-            if (cur) {
-                const audioResource = createAudioResource(cur.createStream());
-                player.play(audioResource);
-                console.log("play the stupid song!!!");
-                
-                const songInfo = await cur.getData();
-
-                return `Playing "${songInfo.title}" by ${songInfo.author}`;
-            }
+                if (cur) {
+                    const audioResource = createAudioResource(cur.createStream());
+                    player.play(audioResource);
+                    audioResource.playStream.on("end", () => setTimeout(() => {
+                        if (guildData) {
+                            guildData.isPlaying = false;
+                            play();
+                        }
+                    }, 2000));
+                    
+                    cur.getData().then(songInfo => {
+                        try {
+                            interaction.followUp(`Playing \'${songInfo.title}\' by \'${songInfo.author}\'`);
+                        } catch(e) {
+                            console.error(e);
+                        }
+                    });
+                }
+            })();
         } else {
-            return "Queue is empty";
+            await interaction.followUp("There are no songs in the queue.");
+            return;
         }
+    } else {
+        await interaction.followUp("You are not in a voice channel!");
     }
-
-    return "You are not in a voice channel";
 };
 
 export function voiceStop(guildId: string) {
@@ -144,6 +163,7 @@ export function voiceStop(guildId: string) {
     if (guildData && guildData.voice) {
         guildData.voice.destroy();
         guildData.voice = null;
+        guildData.isPlaying = false;
 
         return true;
     }
