@@ -102,7 +102,7 @@ export async function voiceStart(interaction: ChatInputCommandInteraction, membe
         let queue = guildData.queue;
 
         if (queue && queue.length > 0) {
-            // don't leave voice channel if re-entering the same one
+            // don't leave voice channel if it is the same one
             if (guildData?.voice?.joinConfig.channelId !== voiceData.channelId) {
                 guildData?.voice?.destroy();
 

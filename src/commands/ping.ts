@@ -6,6 +6,6 @@ module.exports = {
 		.setName('ping')
 		.setDescription('Replies with Pong!'),
 	async execute(interaction: any) {
-		await interaction.reply('Pong!');
+		await interaction.reply(`Pong! The round trip took ${Date.now() - interaction.createdTimestamp}ms.`);
 	},
 } as CommandDef;
