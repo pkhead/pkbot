@@ -1,4 +1,4 @@
-if (!process.env.TOKEN || !process.env.CLIENT_ID || !process.env.SERVER_ID) {
+if (!process.env.TOKEN || !process.env.CLIENT_ID) {
   throw new Error("auth token not found");
 }
 
