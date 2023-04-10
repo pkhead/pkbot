@@ -1,9 +1,9 @@
 import { ChatInputCommandInteraction, GuildMember, SlashCommandBuilder } from "discord.js";
-import { voiceStop } from "../voice";
+import { voiceStop } from "../music";
 
 module.exports = {
 	data: new SlashCommandBuilder()
-		.setName('youtubestop')
+		.setName('stop')
 		.setDescription('Leave the voice channel'),
     
 	async execute(interaction: ChatInputCommandInteraction) {
@@ -16,8 +16,10 @@ module.exports = {
         }
 
         if (member instanceof GuildMember) {
-            voiceStop();
-            await interaction.reply("Left the voice channel");
+            if (voiceStop(guildId))
+                await interaction.reply("Left the voice channel");
+            else
+                await interaction.reply("Not in a voice channel");
         } else {
             await interaction.reply("Unknown error");
         }
