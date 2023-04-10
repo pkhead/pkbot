@@ -2,6 +2,7 @@ import { ChatInputCommandInteraction, Guild, GuildMember } from "discord.js";
 import { VoiceConnection, joinVoiceChannel, DiscordGatewayAdapterCreator, createAudioPlayer, createAudioResource } from "@discordjs/voice";
 import stream from "stream";
 import ytdl from "ytdl-core";
+import https from "https";
 
 export interface MusicData {
     title: string,
@@ -10,7 +11,7 @@ export interface MusicData {
 
 export interface MusicQueueEntry {
     type: string
-    createStream(): stream.Readable;
+    createStream(): Promise<stream.Readable>;
     getData(): Promise<MusicData>
 }
 
@@ -25,7 +26,7 @@ export class MusicQueueYoutubeEntry implements MusicQueueEntry {
         this.videoDetails = null;
     }
 
-    public createStream() {
+    public async createStream() {
         const stream = ytdl(this.url, { quality: "highestaudio", filter: "audioonly" });
         stream.on("end", () => console.log("stream end"));
         return stream;
@@ -39,6 +40,41 @@ export class MusicQueueYoutubeEntry implements MusicQueueEntry {
         return {
             title: this.videoDetails.videoDetails.title,
             author: this.videoDetails.videoDetails.author.name
+        }
+    }
+}
+
+export class MusicQueueURLEntry implements MusicQueueEntry {
+    public type: string
+    public url: string
+
+    constructor(url: string) {
+        this.type = "URL";
+        this.url = url;
+    }
+
+    public createStream() {
+        return new Promise<stream.Readable>((resolve, reject) => {
+            https.get(this.url, (res) => {
+                const contentType = res.headers["content-type"];
+
+                switch (contentType) {
+                    case "audio/mpeg":
+                        break;
+
+                    default:
+                        reject(new MusicError("Could not play URL"));
+                }
+                
+                resolve(res);
+            });
+        });
+    }
+
+    public async getData(): Promise<MusicData> {
+        return {
+            title: "Unknown",
+            author: "Unknown"
         }
     }
 }
@@ -82,7 +118,7 @@ export async function addURLToQueue(guildId: string, urlStr: string): Promise<Mu
     if (url.hostname === "www.youtube.com" || url.hostname === "youtube.com" || url.hostname === "youtu.be") {
         return await addToQueue(guildId, new MusicQueueYoutubeEntry(urlStr));
     } else {
-        throw new MusicError("I don't know what that website that is.");
+        return await addToQueue(guildId, new MusicQueueURLEntry(urlStr));
     }
 }
 
@@ -125,27 +161,40 @@ export async function voiceStart(interaction: ChatInputCommandInteraction, membe
             
             guildData.voice.subscribe(player);
             
-            (function play() {
+            (async function play() {
                 guildData.isPlaying = true;
                 let cur = queue.shift();
 
                 if (cur) {
-                    const audioResource = createAudioResource(cur.createStream());
-                    player.play(audioResource);
-                    audioResource.playStream.on("end", () => setTimeout(() => {
-                        if (guildData) {
-                            guildData.isPlaying = false;
-                            play();
-                        }
-                    }, 2000));
-                    
-                    cur.getData().then(songInfo => {
+                    try {
+                        const audioResource = createAudioResource(await cur.createStream());
+                        player.play(audioResource);
+                        audioResource.playStream.on("end", () => setTimeout(() => {
+                            if (guildData) {
+                                guildData.isPlaying = false;
+                                play();
+                            }
+                        }, 2000));
+                        
+                        const songInfo = await cur.getData()
+                        
                         try {
-                            interaction.followUp(`Playing \`${songInfo.title}\` by \`${songInfo.author}\``);
+                            await interaction.followUp(`Playing \`${songInfo.title}\` by \`${songInfo.author}\``);
                         } catch(e) {
+                            await interaction.followUp("ERROR!");
                             console.error(e);
                         }
-                    });
+                    } catch(e) {
+                        if (e instanceof MusicError) {
+                            await interaction.followUp(e.message);
+                        } else {
+                            await interaction.followUp("ERROR!");
+                            console.error(e);
+                        }
+
+                        guildData.isPlaying = false;
+                        play();
+                    }
                 }
             })();
         } else {
