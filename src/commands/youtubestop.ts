@@ -17,6 +17,7 @@ module.exports = {
 
         if (member instanceof GuildMember) {
             voiceStop();
+            await interaction.reply("Left the voice channel");
         } else {
             await interaction.reply("Unknown error");
         }
