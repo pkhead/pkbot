@@ -1,0 +1,6 @@
+/build
+/node_modules
+.env
+
+/Goodpants.mp3
+/audio.mp3
