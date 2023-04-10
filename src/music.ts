@@ -141,7 +141,7 @@ export async function voiceStart(interaction: ChatInputCommandInteraction, membe
                     
                     cur.getData().then(songInfo => {
                         try {
-                            interaction.followUp(`Playing \'${songInfo.title}\' by \'${songInfo.author}\'`);
+                            interaction.followUp(`Playing \`${songInfo.title}\` by \`${songInfo.author}\``);
                         } catch(e) {
                             console.error(e);
                         }
