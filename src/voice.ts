@@ -10,8 +10,6 @@ export class VoiceError extends Error {};
 export async function voiceStart(url: string, member: GuildMember, guild: Guild) {
     const voiceData = member.voice;
 
-    console.log(voiceData);
-
     if (voiceData && voiceData.channelId) {
         if (voiceConnection?.joinConfig.channelId !== voiceData.channelId) {
             voiceConnection?.destroy();
